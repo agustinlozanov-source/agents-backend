@@ -23,7 +23,9 @@ if (!supabase) {
 }
 
 // Middleware
-app.use(helmet());
+app.use(helmet({
+  crossOriginResourcePolicy: { policy: "cross-origin" }
+}));
 app.use(cors({
   origin: ['https://agentshub.netlify.app', 'http://localhost:3000'],
   credentials: true,
