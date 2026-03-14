@@ -35,6 +35,7 @@ app.use(cors({
 app.use(express.json());
 
 // Rate limiting
+app.set('trust proxy', 1); // Confiar en el load balancer de Railway
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutos
   max: 100 // límite de requests
