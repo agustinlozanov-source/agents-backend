@@ -43,6 +43,18 @@ app.get('/health', (req, res) => {
   });
 });
 
+// Test endpoint - NO dependencies
+app.get('/test', (req, res) => {
+  res.json({ 
+    message: 'Backend is working!',
+    env: {
+      hasSupabaseUrl: !!process.env.SUPABASE_URL,
+      hasVpsHost: !!process.env.VPS_HOST,
+      port: process.env.PORT
+    }
+  });
+});
+
 // Routes
 app.use('/api/vps', vpsRouter);
 app.use('/api/agentes', agentesRouter);
