@@ -1,0 +1,23 @@
+{
+  "name": "agentes-hub-backend",
+  "version": "1.0.0",
+  "description": "API Backend para Agentes Hub - Conecta Frontend con VPS",
+  "main": "server.js",
+  "type": "module",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js"
+  },
+  "keywords": ["api", "agentes", "railway"],
+  "author": "Agustin Lozano",
+  "license": "MIT",
+  "dependencies": {
+    "express": "^4.18.2",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.1",
+    "@supabase/supabase-js": "^2.39.7",
+    "node-ssh": "^13.1.0",
+    "helmet": "^7.1.0",
+    "express-rate-limit": "^7.1.5"
+  }
+}
