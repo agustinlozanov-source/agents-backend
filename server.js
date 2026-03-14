@@ -13,11 +13,14 @@ dotenv.config();
 const app = express();
 const PORT = process.env.PORT || 3001;
 
-// Supabase client
-export const supabase = createClient(
-  process.env.SUPABASE_URL,
-  process.env.SUPABASE_SERVICE_KEY // Service key en backend, no anon
-);
+// Supabase client (make it optional for testing/startup)
+export const supabase = process.env.SUPABASE_URL && process.env.SUPABASE_SERVICE_KEY 
+  ? createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_KEY) 
+  : null;
+
+if (!supabase) {
+  console.log('⚠️ Supabase client disabled (missing SUPABASE_URL or SUPABASE_SERVICE_KEY)');
+}
 
 // Middleware
 app.use(helmet());
@@ -64,13 +67,15 @@ app.use('/api/proyectos', proyectosRouter);
 app.use((err, req, res, next) => {
   console.error('Error:', err);
   
-  // Log error to Supabase
-  supabase.from('logs').insert({
-    nivel: 'error',
-    fuente: 'railway',
-    mensaje: err.message,
-    metadata: { stack: err.stack }
-  }).then();
+  // Log error to Supabase (if configured)
+  if (supabase) {
+    supabase.from('logs').insert({
+      nivel: 'error',
+      fuente: 'railway',
+      mensaje: err.message,
+      metadata: { stack: err.stack }
+    }).then();
+  }
 
   res.status(err.status || 500).json({
     error: err.message || 'Internal server error'
@@ -87,11 +92,13 @@ app.listen(PORT, () => {
   console.log(`✅ Server running on port ${PORT}`);
   console.log(`🌍 Environment: ${process.env.NODE_ENV || 'development'}`);
   
-  // Log startup to Supabase
-  supabase.from('logs').insert({
-    nivel: 'info',
-    fuente: 'railway',
-    mensaje: 'Backend server started',
-    metadata: { port: PORT }
-  }).then();
+  // Log startup to Supabase (if configured)
+  if (supabase) {
+    supabase.from('logs').insert({
+      nivel: 'info',
+      fuente: 'railway',
+      mensaje: 'Backend server started',
+      metadata: { port: PORT }
+    }).then();
+  }
 });
