@@ -7,6 +7,7 @@ import { createClient } from '@supabase/supabase-js';
 import { vpsRouter } from './routes/vps.js';
 import { agentesRouter } from './routes/agentes.js';
 import { proyectosRouter } from './routes/proyectos.js';
+import { deployRouter } from './routes/deploy.js';
 
 dotenv.config();
 
@@ -67,6 +68,7 @@ app.get('/test', (req, res) => {
 app.use('/api/vps', vpsRouter);
 app.use('/api/agentes', agentesRouter);
 app.use('/api/proyectos', proyectosRouter);
+app.use('/api/deploy', deployRouter);
 
 // Error handler
 app.use((err, req, res, next) => {
