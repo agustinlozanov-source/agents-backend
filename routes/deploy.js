@@ -1,7 +1,7 @@
 // routes/deploy.js
 import express from 'express';
-import { createClient } from '@supabase/supabase-js';
 import { executeCommand } from '../lib/ssh.js';
+import { supabase } from '../server.js';
 
 export const deployRouter = express.Router();
 
@@ -14,10 +14,9 @@ deployRouter.post('/', async (req, res) => {
       return res.status(400).json({ error: 'proyecto_id y tarea_id son requeridos' });
     }
 
-    const supabase = createClient(
-      process.env.SUPABASE_URL,
-      process.env.SUPABASE_SERVICE_KEY
-    );
+    if (!supabase) {
+      return res.status(500).json({ error: 'Supabase no configurado en el servidor' });
+    }
 
     // 1. Obtener datos del proyecto y la tarea desde Railway (tiene las keys)
     const [{ data: proyecto }, { data: tarea }] = await Promise.all([
@@ -93,7 +92,8 @@ deployRouter.post('/', async (req, res) => {
 deployRouter.get('/status/:tarea_id', async (req, res) => {
   try {
     const { tarea_id } = req.params;
-    const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_KEY);
+
+    if (!supabase) return res.status(500).json({ error: 'Supabase no configurado' });
 
     const { data: tarea } = await supabase
       .from('agente_tareas')
