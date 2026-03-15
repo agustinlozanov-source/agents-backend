@@ -11,28 +11,69 @@ deployRouter.post('/', async (req, res) => {
     const { proyecto_id, tarea_id } = req.body;
 
     if (!proyecto_id || !tarea_id) {
-      return res.status(400).json({
-        error: 'proyecto_id y tarea_id son requeridos'
-      });
+      return res.status(400).json({ error: 'proyecto_id y tarea_id son requeridos' });
     }
 
-    console.log('Iniciando deploy para proyecto', proyecto_id);
-
-    // Ejecutar auto_deploy.sh en el VPS via SSH
-    const result = await executeCommand(
-      `bash /root/agente_ia/auto_deploy.sh "${proyecto_id}" "${tarea_id}" 2>&1`
+    const supabase = createClient(
+      process.env.SUPABASE_URL,
+      process.env.SUPABASE_SERVICE_KEY
     );
 
-    console.log('Deploy output:', result.stdout);
-    if (result.stderr) console.error('Deploy stderr:', result.stderr);
+    // 1. Obtener datos del proyecto y la tarea desde Railway (tiene las keys)
+    const [{ data: proyecto }, { data: tarea }] = await Promise.all([
+      supabase.from('proyectos').select('carpeta_vps, repo_github, nombre').eq('id', proyecto_id).single(),
+      supabase.from('agente_tareas').select('output, archivos_generados').eq('id', tarea_id).single(),
+    ]);
 
-    if (!result.success) {
+    if (!proyecto) {
+      return res.status(404).json({ error: 'Proyecto no encontrado' });
+    }
+    if (!proyecto.carpeta_vps) {
+      return res.status(400).json({ error: 'El proyecto no tiene carpeta_vps configurada' });
+    }
+    if (!tarea || !tarea.output) {
+      return res.status(404).json({ error: 'Tarea no encontrada o sin output' });
+    }
+
+    const projectDir = proyecto.carpeta_vps;
+    const commitMsg = `feat: código generado por agente (tarea: ${tarea_id.substring(0, 8)})`;
+
+    // 2. Ejecutar git en el VPS (solo git, sin necesitar Supabase en el VPS)
+    const gitCmd = [
+      `cd "${projectDir}"`,
+      `git add -A`,
+      `git diff --staged --quiet && echo "NO_CHANGES" || git commit -m "${commitMsg}"`,
+      `git push origin main 2>&1 || git push origin master 2>&1`,
+    ].join(' && ');
+
+    const result = await executeCommand(gitCmd);
+    console.log('Deploy stdout:', result.stdout);
+    console.log('Deploy stderr:', result.stderr);
+
+    if (result.stdout.includes('NO_CHANGES')) {
+      return res.json({ success: true, message: 'No hay cambios nuevos para deployar', output: result.stdout });
+    }
+
+    if (!result.success && !result.stdout.includes('main') && !result.stdout.includes('master')) {
       return res.status(500).json({
         success: false,
-        error: 'Error ejecutando deploy en VPS',
+        error: 'Error en git push',
         details: result.stderr || result.stdout
       });
     }
+
+    // 3. Marcar tarea como deployed en Supabase (desde Railway)
+    await supabase
+      .from('agente_tareas')
+      .update({ metadata: { deployed: true, deployed_at: new Date().toISOString() } })
+      .eq('id', tarea_id);
+
+    await supabase.from('logs').insert({
+      nivel: 'info',
+      fuente: 'deploy',
+      mensaje: `Deploy completado para proyecto ${proyecto.nombre}`,
+      metadata: { proyecto_id, tarea_id }
+    });
 
     res.json({
       success: true,
@@ -42,11 +83,7 @@ deployRouter.post('/', async (req, res) => {
 
   } catch (error) {
     console.error('Error en deploy:', error);
-    res.status(500).json({
-      success: false,
-      error: 'Error ejecutando deploy',
-      details: error.message
-    });
+    res.status(500).json({ success: false, error: 'Error ejecutando deploy', details: error.message });
   }
 });
 
@@ -54,11 +91,7 @@ deployRouter.post('/', async (req, res) => {
 deployRouter.get('/status/:tarea_id', async (req, res) => {
   try {
     const { tarea_id } = req.params;
-
-    const supabase = createClient(
-      process.env.SUPABASE_URL,
-      process.env.SUPABASE_SERVICE_KEY
-    );
+    const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_KEY);
 
     const { data: tarea } = await supabase
       .from('agente_tareas')
@@ -66,13 +99,12 @@ deployRouter.get('/status/:tarea_id', async (req, res) => {
       .eq('id', tarea_id)
       .single();
 
-    const deployed = tarea?.metadata?.deployed || false;
-    const deployed_at = tarea?.metadata?.deployed_at || null;
-
-    res.json({ tarea_id, deployed, deployed_at });
-
+    res.json({
+      tarea_id,
+      deployed: tarea?.metadata?.deployed || false,
+      deployed_at: tarea?.metadata?.deployed_at || null
+    });
   } catch (error) {
-    console.error('Error verificando status:', error);
     res.status(500).json({ error: 'Error verificando status' });
   }
 });
