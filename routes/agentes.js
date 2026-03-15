@@ -10,22 +10,19 @@ agentesRouter.post('/execute', async (req, res, next) => {
     const { agente_tipo, input, proyecto_id } = req.body;
 
     if (!agente_tipo || !input) {
-      return res.status(400).json({ 
-        error: 'agente_tipo and input are required' 
-      });
+      return res.status(400).json({ error: 'agente_tipo and input are required' });
     }
 
-    // Validate agent type
     const validTypes = ['investigacion', 'programacion', 'automatizacion', 'auditor'];
     if (!validTypes.includes(agente_tipo)) {
       return res.status(400).json({ error: 'Invalid agent type' });
     }
 
-    // Create task in Supabase
+    // Create task in Supabase (status: procesando)
     const { data: tarea, error: tareaError } = await supabase
       .from('agente_tareas')
       .insert({
-        proyecto_id,
+        proyecto_id: proyecto_id || null,
         agente_tipo,
         input,
         status: 'procesando'
@@ -35,45 +32,27 @@ agentesRouter.post('/execute', async (req, res, next) => {
 
     if (tareaError) throw tareaError;
 
-    // Execute agent on VPS via Telegram bot
-    // Format command based on agent type
-    const commands = {
-      investigacion: `/investigar ${input}`,
-      programacion: `/desarrollar ${input}`,
-      automatizacion: `/automatizar ${input}`,
-      auditor: `/auditar`
-    };
+    // Respond immediately — agent runs async on VPS
+    res.json({ success: true, tarea_id: tarea.id, agente_tipo, status: 'procesando' });
 
-    const command = commands[agente_tipo];
+    // Sanitize input to avoid shell injection
+    const safeInput = input
+      .replace(/\\/g, '\\\\')
+      .replace(/"/g, '\\"')
+      .replace(/`/g, '\\`');
 
-    // Send command to bot (this is a simplified version)
-    // In production, you'd use Telegram API directly
-    const result = await executeCommand(
-      `echo "${command}" | nc localhost 3000` // Placeholder
-    );
+    const proyectoArg = proyecto_id ? `--proyecto_id "${proyecto_id}"` : '';
 
-    // Update task status
-    await supabase
-      .from('agente_tareas')
-      .update({ 
-        status: 'completado',
-        output: result.stdout 
-      })
-      .eq('id', tarea.id);
+    // Run agent on VPS in background via SSH (nohup so it outlives the SSH session)
+    const cmd = `cd /root/agente_ia && nohup node run_agent.js --tipo ${agente_tipo} --input "${safeInput}" --tarea_id ${tarea.id} ${proyectoArg} > /tmp/agente_${tarea.id}.log 2>&1 &`;
 
-    // Log
-    await supabase.from('logs').insert({
-      nivel: 'info',
-      fuente: 'railway',
-      mensaje: `Agent executed: ${agente_tipo}`,
-      metadata: { tarea_id: tarea.id, input }
-    });
-
-    res.json({
-      success: true,
-      tarea_id: tarea.id,
-      agente_tipo,
-      status: 'processing'
+    executeCommand(cmd).catch((err) => {
+      console.error('SSH execute error:', err.message);
+      supabase
+        .from('agente_tareas')
+        .update({ status: 'error', output: 'Error al conectar con el VPS: ' + err.message })
+        .eq('id', tarea.id)
+        .then();
     });
 
   } catch (error) {
@@ -84,14 +63,12 @@ agentesRouter.post('/execute', async (req, res, next) => {
 // Get agent status
 agentesRouter.get('/status', async (req, res, next) => {
   try {
-    // Get recent tasks by agent type
     const { data: tareas } = await supabase
       .from('agente_tareas')
       .select('agente_tipo, status, created_at')
       .order('created_at', { ascending: false })
       .limit(20);
 
-    // Aggregate status by agent type
     const status = {
       investigacion: { activo: false, ultimaTarea: null },
       programacion: { activo: false, ultimaTarea: null },
@@ -118,7 +95,7 @@ agentesRouter.get('/skills', async (req, res, next) => {
     const { agente_tipo } = req.query;
 
     let query = supabase.from('agente_skills').select('*');
-    
+
     if (agente_tipo) {
       query = query.eq('agente_tipo', agente_tipo);
     }
@@ -154,7 +131,6 @@ agentesRouter.put('/skills/:id', async (req, res, next) => {
 
     if (error) throw error;
 
-    // Log
     await supabase.from('logs').insert({
       nivel: 'info',
       fuente: 'railway',
