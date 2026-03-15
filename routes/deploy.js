@@ -1,10 +1,7 @@
 // routes/deploy.js
 import express from 'express';
-import { exec } from 'child_process';
-import { promisify } from 'util';
 import { createClient } from '@supabase/supabase-js';
-
-const execAsync = promisify(exec);
+import { executeCommand } from '../lib/ssh.js';
 
 export const deployRouter = express.Router();
 
@@ -21,19 +18,26 @@ deployRouter.post('/', async (req, res) => {
 
     console.log('Iniciando deploy para proyecto', proyecto_id);
 
-    const scriptPath = '/root/agente_ia/auto_deploy.sh';
-    const command = scriptPath + ' ' + proyecto_id + ' ' + tarea_id;
-    const env = { ...process.env };
+    // Ejecutar auto_deploy.sh en el VPS via SSH
+    const result = await executeCommand(
+      `bash /root/agente_ia/auto_deploy.sh "${proyecto_id}" "${tarea_id}" 2>&1`
+    );
 
-    const { stdout, stderr } = await execAsync(command, { timeout: 60000, env });
+    console.log('Deploy output:', result.stdout);
+    if (result.stderr) console.error('Deploy stderr:', result.stderr);
 
-    console.log('Deploy output:', stdout);
-    if (stderr) console.error('Deploy stderr:', stderr);
+    if (!result.success) {
+      return res.status(500).json({
+        success: false,
+        error: 'Error ejecutando deploy en VPS',
+        details: result.stderr || result.stdout
+      });
+    }
 
     res.json({
       success: true,
       message: 'Deploy completado exitosamente',
-      output: stdout
+      output: result.stdout
     });
 
   } catch (error) {
