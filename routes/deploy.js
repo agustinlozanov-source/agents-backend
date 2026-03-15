@@ -35,7 +35,9 @@ deployRouter.post('/', async (req, res) => {
       return res.status(404).json({ error: 'Tarea no encontrada o sin output' });
     }
 
-    const projectDir = proyecto.carpeta_vps;
+    const projectDir = proyecto.carpeta_vps.startsWith('/')
+      ? proyecto.carpeta_vps
+      : `/root/agente_ia/proyectos/${proyecto.carpeta_vps}`;
     const commitMsg = `feat: código generado por agente (tarea: ${tarea_id.substring(0, 8)})`;
 
     // 2. Ejecutar git en el VPS (solo git, sin necesitar Supabase en el VPS)
